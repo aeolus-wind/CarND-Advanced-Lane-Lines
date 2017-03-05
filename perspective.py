@@ -5,8 +5,8 @@ import matplotlib.image as mpimg
 import glob
 from distortion import RemoveDistortion
 import math
-from sobel_experiment import bit_and_transform
-from test_pipeline import to_RGB
+from colors import bit_and_transform
+from watch_video import to_RGB
 
 
 def click_bounding_box(event, x, y, flags, params):

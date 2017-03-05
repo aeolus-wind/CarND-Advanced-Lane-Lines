@@ -4,11 +4,12 @@ import matplotlib.image as mpimg
 import glob
 import cv2
 from distortion import RemoveDistortion
-from sobel_experiment import bit_and_transform
 from perspective import default_transform_perspective
 from perspective import default_invert_perspective
-from test_pipeline import to_RGB
-from colors import xor_decision_rule
+from watch_video import to_RGB
+from colors import or_decision_rule
+from variable_perspective import filter_lines_find_hull, get_perspective_transform_matrix
+
 
 # Read in a thresholded image
 # window settings
@@ -150,44 +151,84 @@ def bound_lanes(img, window_centroids):
 
 
 if __name__ == '__main__':
-    test = cv2.imread('test_images/straight_lines2.jpg')
+    original = False
+    if original:
+        """
+        first procedure I tested-- to be deprecated
+        """
+        test = cv2.imread('test_images/straight_lines2.jpg')
 
-    rmv_distortion = RemoveDistortion()
-    rmv_distortion.load_pickle()
-    undistort = rmv_distortion.undistort(test)
-    binary_img = xor_decision_rule(undistort)  # a more robust version using hlv color space will be added
+        rmv_distortion = RemoveDistortion()
+        rmv_distortion.load_pickle()
+        undistort = rmv_distortion.undistort(test)
 
-    cv2.namedWindow('original img')
-    cv2.imshow('original img', undistort)
-    cv2.namedWindow('binary img')
-    cv2.imshow('binary img', to_RGB(binary_img))
-    cv2.namedWindow('binary img transform')
-    cv2.imshow('binary img transform', default_transform_perspective(to_RGB(binary_img)))
+        binary_img = or_decision_rule(undistort)  # a more robust version using hlv color space will be added
 
-    shifted_perspective = default_transform_perspective(to_RGB(binary_img))
+        cv2.namedWindow('original img')
+        cv2.imshow('original img', undistort)
+        cv2.namedWindow('binary img')
+        cv2.imshow('binary img', to_RGB(binary_img))
+        cv2.namedWindow('binary img transform')
+        cv2.imshow('binary img transform', default_transform_perspective(to_RGB(binary_img)))
 
-    #plt.imshow(shifted_perspective)
-    #plt.show()
+        shifted_perspective = default_transform_perspective(to_RGB(binary_img))
 
-    centroids = find_window_centroids(shifted_perspective, window_width,
-                                      window_height, margin)  # find centroids using default
-    #print(centroids)
-    # draw_window_centroids(shifted_perspective[:,:,0], centroids)
-    corrected_centroids = np.array([[ 358.,  972.],
-                                    [ 359.,  973.],
-                                    [ 360.,  942.],
-                                    [ 366., 941.],
-                                    [ 366.,  939.],
-                                    [ 360.,  957.],
-                                    [ 373.,  956.],
-                                    [ 378.,  952.],
-                                    [ 360.,  930.]])
+        #plt.imshow(shifted_perspective)
+        #plt.show()
 
-    bounded_lane = bound_lanes(shifted_perspective[:,:,0], centroids)
-    #cv2.imshow('img',default_invert_perspective(bounded_lane))
-    transform = cv2.addWeighted(undistort, 1, default_invert_perspective(bounded_lane), 0.9, 0)
-    cv2.imshow('transformed_image', transform)
+        centroids = find_window_centroids(shifted_perspective, window_width,
+                                          window_height, margin)  # find centroids using default
+        #print(centroids)
+        # draw_window_centroids(shifted_perspective[:,:,0], centroids)
+        corrected_centroids = np.array([[ 358.,  972.],
+                                        [ 359.,  973.],
+                                        [ 360.,  942.],
+                                        [ 366., 941.],
+                                        [ 366.,  939.],
+                                        [ 360.,  957.],
+                                        [ 373.,  956.],
+                                        [ 378.,  952.],
+                                        [ 360.,  930.]])
 
+        bounded_lane = bound_lanes(shifted_perspective[:,:,0], centroids)
+        #cv2.imshow('img',default_invert_perspective(bounded_lane))
+        transform = cv2.addWeighted(undistort, 1, default_invert_perspective(bounded_lane), 0.9, 0)
+        cv2.imshow('transformed_image', transform)
+        cv2.waitKey()
+    else:
+        curve_image = glob.glob('test_images/test*.jpg')
+        straight_image = glob.glob('test_images/straight_lines*.jpg')
 
+        for img_path in curve_image + straight_image:
+            img = cv2.imread(img_path)
+            rmv_distortion = RemoveDistortion()
+            rmv_distortion.load_pickle()
+            undistort = rmv_distortion.undistort(img)
 
-    cv2.waitKey()
+            hull = filter_lines_find_hull(undistort)
+
+            transform_matrix, invert_matrix = get_perspective_transform_matrix(undistort, hull)
+
+            binary_img = or_decision_rule(undistort)
+
+            warped = cv2.warpPerspective(to_RGB(binary_img), transform_matrix, (binary_img.shape[1], binary_img.shape[0]), flags=cv2.INTER_LINEAR)
+            centroids = find_window_centroids(warped, window_width, window_height, margin)
+
+            bounded_lane = bound_lanes(warped[:,:,0], centroids)
+            print_lane = cv2.addWeighted(undistort, 1,
+                                         cv2.warpPerspective(to_RGB(bounded_lane),
+                                                             invert_matrix,
+                                                             (binary_img.shape[1], binary_img.shape[0]),
+                                                             flags=cv2.INTER_LINEAR), 0.9, 0)
+            first_two_steps = True
+            if first_two_steps:
+                cv2.namedWindow('original binary image')
+                cv2.imshow('original binary image', to_RGB(binary_img))
+                cv2.namedWindow('transformed_perspective')
+                cv2.imshow('transformed_perspective', warped)
+                cv2.namedWindow('bounded_lane')
+                cv2.imshow('bounded_lane', bounded_lane)
+
+            cv2.namedWindow('print lane')
+            cv2.imshow('print lane', print_lane)
+            cv2.waitKey()
