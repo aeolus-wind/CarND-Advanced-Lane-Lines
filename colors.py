@@ -27,8 +27,9 @@ def threshold_lightness(img, thresh=(0,255)):
 
 
 def hls_decision_rule(img):
-    # The rule works the best in conjunctionw with the features we get from sobel
-    hls_rule = np.logical_and(threshold_hue(img, (0,70)), threshold_saturation(img, (170, 255)))
+    # The rule works the best in conjunctionw with the features we get from sobel   #changed from 170
+    #np.logical_or(threshold_hue(img, (0, 70)),
+    hls_rule = threshold_saturation(img, (80, 255))
     return hls_rule
 
 
@@ -115,8 +116,8 @@ if __name__ == '__main__':
     img = cv2.imread('test_images/test6.jpg')
     hls_img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
 
-    analyze_colors = False
-    test_lane_colors = True
+    analyze_colors = True
+    test_lane_colors = False
     if analyze_colors:
         cv2.namedWindow('image')
         bounding_box = []
@@ -149,10 +150,10 @@ if __name__ == '__main__':
         cv2.imshow('original', img)
 
         cv2.namedWindow('image Hue')
-        cv2.imshow('image Hue', to_RGB(threshold_saturation(img, (70, 180))))
+        cv2.imshow('image Hue', to_RGB(threshold_hue(img, (70, 180))))
 
         cv2.namedWindow('img saturation')
-        cv2.imshow('img saturation', to_RGB(threshold_hue(img, (50, 150)))) #saturation great for yellow
+        cv2.imshow('img saturation', to_RGB(threshold_saturation(img, (80, 255)))) #saturation great for yellow
                                                  # great for white lines too...
 
         cv2.namedWindow('combined rule')
@@ -160,6 +161,9 @@ if __name__ == '__main__':
 
         cv2.namedWindow('combined and sobel')
         cv2.imshow('combined and sobel', to_RGB(np.bitwise_or(hls_decision_rule(img), bit_and_transform(img))))
+
+        cv2.namedWindow('sobel_mag')
+        cv2.imshow('sobel_mag', to_RGB(grad_magnitude(cv2.cvtColor(img,cv2.COLOR_BGR2HLS),ksize=3, thresh=(50,255))))
 
         cv2.waitKey()
 

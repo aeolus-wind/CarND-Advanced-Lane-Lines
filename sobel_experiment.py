@@ -5,6 +5,7 @@ import numpy as np
 import math
 from test_pipeline import to_RGB
 
+
 def grad_xy(img, dir='x', ksize=3, thresh=(0,255)):
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     if dir=='x':

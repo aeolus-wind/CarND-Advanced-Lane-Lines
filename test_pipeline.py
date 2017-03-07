@@ -3,15 +3,21 @@ import numpy as np
 from distortion import RemoveDistortion
 from variable_perspective import filter_lines_find_hull, get_perspective_transform_matrix
 from variable_perspective import extrapolate_to_vanishing, collect_filter_projections, find_filtered_candidate_lines
-from find_lanelines import find_window_centroids, bound_lanes
-from colors import or_decision_rule
+from variable_perspective import get_slopes_intercepts
+from find_lanelines import find_window_centroids, bound_lanes, draw_window_centroids
+from colors import hls_decision_rule, or_decision_rule
 from find_lanelines import window_width, window_height, margin  # some constants to be used by the algorithm
+from find_lanelines import distance_from_center_lane, transform_lane, radius_curvature
 from variable_perspective import draw_lines
 from watch_video import to_RGB
-from colors import grad_theta_no_thresh, grad_magnitude_no_thresh
-from variable_perspective import grad_magnitude, region_of_interest, roi
+from colors import grad_theta, grad_magnitude
+from variable_perspective import region_of_interest, roi
+from smooth_value import ExponentialSmoother, RunningAverage
 import math
 
+problem_image_counter = 0
+smooth_hull_left_slope = ExponentialSmoother(alpha=0.8)
+smooth_hull_right_slope = ExponentialSmoother(alpha=0.8)
 
 def insert_diag_into(frame, diag, x_slice, y_slice):
     # should take in upper left and lower right pixel location
@@ -21,20 +27,50 @@ def insert_diag_into(frame, diag, x_slice, y_slice):
 
 
 def testing_pipeline(img):
+    global problem_image_counter
+    global smooth_hull_left_slope
+    global smooth_hull_right_slope
     rmv_distortion = RemoveDistortion()
     rmv_distortion.load_pickle()
     undistort = rmv_distortion.undistort(img)
 
     # color and gradient filters
     hls_colors = cv2.cvtColor(undistort, cv2.COLOR_BGR2HLS)
-    grad_mag = grad_magnitude_no_thresh(undistort)
-    grad_theta = grad_theta_no_thresh(undistort)
+    grad_mag = np.uint8(grad_magnitude(undistort, 7, (50, 150)))
+    theta_grad = grad_theta(img, ksize=3, thresh=(math.pi/3-0.2, math.pi/3+0.2))
     binary_img = or_decision_rule(undistort)
 
-    hull = filter_lines_find_hull(undistort)
-    hull_lines_img = np.zeros_like(undistort)
-    draw_lines(hull_lines_img, np.int32(hull).reshape((-1, 1, 4)), thickness=30)
-    hull_lines_img = cv2.addWeighted(hull_lines_img, 1.0, undistort, 1.0, 0.0)
+    try:
+        hull = filter_lines_find_hull(undistort)
+
+        hull_slopes, _ = get_slopes_intercepts(np.array(hull).reshape((2,4)))
+        previous_smooth_left = smooth_hull_left_slope.get_smoothed_value()
+        if previous_smooth_left is not None:
+            #if abs((previous_smooth_left - hull_slopes[0]) / previous_smooth_left) > 0.1: #if change is greater than 10%
+            smooth_hull_left_slope.update(hull_slopes[0])
+            # new x2's with adjusted slopes
+            smoothed_left_slope = smooth_hull_left_slope.get_smoothed_value()
+            hull[0][2] = (hull[0][3] - hull[0][1]) / smoothed_left_slope + hull[0][0]
+        previous_smooth_right = smooth_hull_right_slope.get_smoothed_value()
+        if previous_smooth_right is not None:
+            #if abs((previous_smooth_right - hull_slopes[1]) / previous_smooth_right) > 0.1: #10% worked in assignment 1
+            smooth_hull_right_slope.update(hull_slopes[1])
+            # new x2's with adjusted slopes
+            smoothed_right_slope = smooth_hull_right_slope.get_smoothed_value()
+            hull[1][2] = (hull[1][3] - hull[1][1]) / smoothed_right_slope + hull[1][0]
+
+        hull_lines_img = np.zeros_like(undistort)
+        draw_lines(hull_lines_img, np.int32(hull).reshape((-1, 1, 4)), thickness=30)
+        hull_lines_img = cv2.addWeighted(hull_lines_img, 1.0, undistort, 1.0, 0.0)
+    except ValueError:
+        print("hull was ", hull, "... wrong type")
+        hull_lines_img = np.zeros_like(undistort)
+        cv2.imwrite('problem_image' + str(problem_image_counter) + '.jpg', img)
+        problem_image_counter += 1
+    except:
+        print('not sure what the error is')
+        cv2.imwrite('problem_image'+str(problem_image_counter)+'.jpg',img)
+        problem_image_counter +=1
 
     transform_matrix, invert_matrix = get_perspective_transform_matrix(undistort, hull)
     # transform perspective on filtered binary image
@@ -53,9 +89,9 @@ def testing_pipeline(img):
     below are lower-level functions
     """
     #see all lines before filters
-    grad_mag = np.uint8(grad_magnitude(undistort, 7, (50, 150)))
+
     region_interest = region_of_interest(grad_mag, [roi])
-    lines = cv2.HoughLinesP(region_interest, 1, math.pi / 180, 50, np.array([]),
+    lines = cv2.HoughLinesP(region_interest, 1, math.pi / 180, 30, np.array([]),
                             minLineLength=40, maxLineGap=50)
     all_hough_lines_img = np.zeros_like(undistort)
     draw_lines(all_hough_lines_img, lines, thickness=10)
@@ -82,7 +118,14 @@ def testing_pipeline(img):
     convergence_line_image = cv2.addWeighted(np.uint8(undistort), 1, to_RGB(filter_projected_img), 0.9, 0)
 
     #finding centroids
-    #draw_window_centroids(img, window_centroids)
+    convolution = draw_window_centroids(warped[:, :, 0], centroids)
+
+    #curverad and offset
+
+    left_lane_trans, right_lane_trans = transform_lane(centroids, invert_matrix)
+    offset = distance_from_center_lane(left_lane_trans, right_lane_trans, undistort)
+
+    curverad = radius_curvature(img, centroids)
 
 
     processing_steps = {
@@ -91,17 +134,16 @@ def testing_pipeline(img):
         'diag3': hls_colors[:, :, 0],
         'diag4': hls_colors[:, :, 2],
         'diag5': grad_mag,
-        'diag6': grad_theta,
+        'diag6': theta_grad,
         'diag7': warped,
+        'diag8': convolution,
         'diag9': all_hough_lines_img,
         'diag10': filtered_line_image,
         'diag11': convergence_line_image,
         'diag12': hull_lines_img
     }
-    curverad = 0
-    offset = 0
-    return curverad, offset, framed_lane, processing_steps
 
+    return curverad, offset, framed_lane, processing_steps
 
 
 def compose_diag_screen(curverad=0, offset=0, main_diag=None,
@@ -146,14 +188,27 @@ def compose_diag_screen(curverad=0, offset=0, main_diag=None,
 
     return frame
 
+def run_compose_diag_screen(img):
+    curverad, offset, framed_lane, processing_steps = testing_pipeline(img)
+    result = compose_diag_screen(curverad, offset, framed_lane, **processing_steps)
+    return result
+
 if __name__ == '__main__':
+    """
     img = cv2.imread('test_images/test1.jpg')
     curverad, offset, framed_lane, processing_steps = testing_pipeline(img)
     cv2.namedWindow('test')
-    print(processing_steps['diag3'].shape)
     cv2.imshow('test', processing_steps['diag3'])
     img = compose_diag_screen(curverad, offset, framed_lane, **processing_steps)
     cv2.namedWindow('pipeline', cv2.WINDOW_NORMAL)
     cv2.imshow('pipeline', img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+    """
+
+    from moviepy.editor import VideoFileClip
+
+    output_path = 'test_project.mp4'
+    clip1 = VideoFileClip("project_video.mp4")
+    white_clip = clip1.fl_image(run_compose_diag_screen)  # NOTE: this function expects color images!!
+    white_clip.write_videofile(output_path, audio=False)

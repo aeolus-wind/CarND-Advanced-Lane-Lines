@@ -1,5 +1,5 @@
 import numpy as np
-from colors import grad_magnitude
+from colors import grad_magnitude, hls_decision_rule
 import cv2
 import glob
 from watch_video import to_RGB
@@ -182,15 +182,16 @@ def find_filtered_candidate_lines(img):
     :return: applies all filters above. The 'sub filters' are implicitly ranked by order so they relax in strength if
     no results appear from the stronger candidate
     """
-    grad_mag = np.uint8(grad_magnitude(img, 7, (50, 150)))
-    region_interest = region_of_interest(grad_mag, [roi])
+    grad_img = np.uint8(np.logical_or(grad_magnitude(img, 7, (50, 150)), hls_decision_rule(img)))
+
+    region_interest = region_of_interest(grad_img, [roi])
     highly_probable_bounding_lines = [outer_region_left, outer_region_right,
                                       inner_region_right, inner_region_left]
     probable_names = ['outer_region_left', 'outer_region_right', 'inner_region_right', 'inner_region_left']
 
     best_lines = {}
-    lines = cv2.HoughLinesP(region_interest, 1, math.pi / 180, 50, np.array([]),
-                            minLineLength=40, maxLineGap=50)
+    lines = cv2.HoughLinesP(region_interest, 1, math.pi / 180, 20, np.array([]),
+                            minLineLength=20, maxLineGap=50)
     for bounding_line_set, name in zip(highly_probable_bounding_lines, probable_names):
         for top_priority in bounding_line_set:
             temp_holder_lines = filter_lines(lines, **top_priority).reshape((-1,1,4))
@@ -327,35 +328,36 @@ def find_hull(lines):
 
     # chosen lines biased towards starting close to these points
     l_bias = (150, 720)
-    r_bias = (1120, 620)
+    r_bias = (820, 720)
     left_closest_to_point = np.sqrt((lines[:, 0] - l_bias[0]) ** 2 + (lines[:, 1] - l_bias[1]) ** 2)
     left_closest_to_point = left_closest_to_point[finite_slopes]
 
-    #left_slope = weighted_avg3(slopes[left_lines].flatten(),
-    #                           length[left_lines].flatten(),
-    #                           left_closest_to_point[left_lines].flatten())
-    left_slope = weighted_avg2(slopes[left_lines].flatten(), length[left_lines].flatten())
+    left_slope = weighted_avg3(slopes[left_lines].flatten(),
+                               length[left_lines].flatten(),
+                               left_closest_to_point[left_lines].flatten())
 
-    #left_intercept = weighted_avg3(intercepts[left_lines].flatten(),
-    #                               length[left_lines].flatten(),
-    #                               left_closest_to_point[left_lines].flatten())
-    left_intercept = weighted_avg2(intercepts[left_lines].flatten(),
-                                   length[left_lines].flatten())
+    #left_slope = weighted_avg2(slopes[left_lines].flatten(), length[left_lines].flatten())
+
+    left_intercept = weighted_avg3(intercepts[left_lines].flatten(),
+                                   length[left_lines].flatten(),
+                                   left_closest_to_point[left_lines].flatten())
+    #left_intercept = weighted_avg2(intercepts[left_lines].flatten(),
+                                   #length[left_lines].flatten())
 
     right_closest_to_point = np.sqrt((lines[:, 0] - r_bias[0])**2 + (lines[:, 1] - r_bias[1])**2)
     right_closest_to_point = right_closest_to_point[finite_slopes]
 
-    #right_slope = weighted_avg3(slopes[right_lines].flatten(),
-    #                            length[right_lines].flatten(),
-    #                            right_closest_to_point[right_lines].flatten())
-    right_slope = weighted_avg2(slopes[right_lines].flatten(),
-                                length[right_lines].flatten())
+    right_slope = weighted_avg3(slopes[right_lines].flatten(),
+                                length[right_lines].flatten(),
+                                right_closest_to_point[right_lines].flatten())
+    #right_slope = weighted_avg2(slopes[right_lines].flatten(),
+    #                            length[right_lines].flatten())
 
-    #right_intercept = weighted_avg3(intercepts[right_lines],
-    #                                length[right_lines],
-    #                                right_closest_to_point[right_lines])
-    right_intercept = weighted_avg2(intercepts[right_lines].flatten(),
-                                    length[right_lines].flatten())
+    right_intercept = weighted_avg3(intercepts[right_lines],
+                                    length[right_lines],
+                                    right_closest_to_point[right_lines])
+    #right_intercept = weighted_avg2(intercepts[right_lines].flatten(),
+    #                                length[right_lines].flatten())
 
     # map points-- points in the hull which determine the perspective transform
     # wider distance in the y's indicates more faith in the detected lines
@@ -392,7 +394,7 @@ def transform_coordinates_hull(img, hull, x_bound=(100, 1300), invert=False):
     xs = project_y_to_x([600], slopes, intercepts)  # want to get distance between the mid-points at the bottom
     x_left_shift = 250 - xs[0]
     x_right_shift = xs[1] - 1000
-    y_upper = 500  # this also affects distortion in the picture.
+    y_upper = 480  # this also affects distortion in the picture.
                    # the closer to y_lower it is, the more the image is stretched
     y_lower = 700
     src = np.array(hull,np.float32).reshape((4,2))
@@ -438,6 +440,7 @@ if __name__ == '__main__':
     test_dictionary = False
     test_local_filters = False
     view_extrapolated_lines = False
+    test_hull_on_sample = False
     if find_regions_interest:
 
         cv2.namedWindow('img')
@@ -574,7 +577,7 @@ if __name__ == '__main__':
 
                 cv2.waitKey()
 
-            else:
+            elif test_hull_on_sample:
                 """
                 test dealing with effectiveness of hull
                 """
@@ -593,6 +596,21 @@ if __name__ == '__main__':
                 ax1.set_title('unfiltered vanishing point image')
                 ax2.set_title('convergent vanishing point lines')
                 plt.show()
+            else:
+                rmv_distortion = RemoveDistortion()
+                rmv_distortion.load_pickle()
+                img = cv2.imread('run10/problem_image0.jpg')
+                cv2.namedWindow('test')
+                img = cv2.cvtColor(img,cv2.COLOR_RGB2BGR)
+                undistort = rmv_distortion.undistort(img)
+                grad_mag = grad_magnitude(undistort, 3, (50, 150))
+                cv2.imshow('test', to_RGB(grad_mag))
+
+                hls_added = np.logical_or(grad_mag, hls_decision_rule(undistort))
+
+                cv2.namedWindow('view')
+                cv2.imshow('view', to_RGB(hls_added))
+                cv2.waitKey()
 
 
 
