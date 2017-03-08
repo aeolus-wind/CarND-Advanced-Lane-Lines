@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from watch_video import to_RGB
+from normalize_process_images import to_RGB
 import numpy as np
 import math
 

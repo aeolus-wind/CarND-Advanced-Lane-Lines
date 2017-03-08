@@ -2,7 +2,7 @@ import numpy as np
 from colors import grad_magnitude, hls_decision_rule
 import cv2
 import glob
-from watch_video import to_RGB
+from normalize_process_images import to_RGB
 import math
 import unittest
 import matplotlib.pyplot as plt

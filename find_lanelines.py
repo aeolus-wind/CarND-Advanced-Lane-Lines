@@ -6,7 +6,7 @@ import cv2
 from distortion import RemoveDistortion
 from perspective import default_transform_perspective
 from perspective import default_invert_perspective
-from watch_video import to_RGB
+from normalize_process_images import to_RGB
 from colors import or_decision_rule
 from variable_perspective import filter_lines_find_hull, get_perspective_transform_matrix
 
@@ -39,6 +39,11 @@ def find_window_centroids(img, window_width, window_height, margin, tolerance=5,
     l_center = np.argmax(np.convolve(window, l_sum)) - window_width / 2
     r_sum = np.sum(img[int(3 * img.shape[0] / 4):, int(img.shape[1] / 2):], axis=0)
     r_center = np.argmax(np.convolve(window, r_sum)) - window_width / 2 + int(img.shape[1] / 2)
+    if initial_point is not None:
+        if abs((l_center - initial_point[0])/initial_point[0])>0.1:
+            l_center = initial_point[0]
+        if abs((r_center-initial_point[1]) / initial_point[1])>0.1:
+            r_center = initial_point[1]
 
     # Add what we found for the first layer
     window_centroids.append((l_center, r_center))
@@ -122,12 +127,14 @@ def draw_window_centroids(img, window_centroids):
 
 
 def radius_curvature(img, centroids, window_height=window_height):
+    meters_per_pixel_x = 3.7 / 700
+    meters_per_pixel_y = 30 / 720
     centroids = np.array(centroids)
     ys = range(img.shape[0], 0, -window_height)
-    left_poly = np.polyfit(ys, centroids[:,0], 2)
-    right_poly = np.polyfit(ys, centroids[:,1], 2)
-    left_poly_curve = (1+(2*left_poly[0]*700 + left_poly[1])**2)**(3/2) / abs(2*left_poly[0])
-    right_poly_curve = (1 + (2*right_poly[0]*700 + right_poly[1])**2)**(3/2) / abs(2*right_poly[0])
+    left_poly = np.polyfit(np.array(ys)*meters_per_pixel_y, centroids[:,0]*meters_per_pixel_x, 2)
+    right_poly = np.polyfit(np.array(ys)*meters_per_pixel_y, centroids[:,1]*meters_per_pixel_x, 2)
+    left_poly_curve = (1+(2*left_poly[0]*700*meters_per_pixel_y + left_poly[1])**2)**(3/2) / abs(2*left_poly[0])
+    right_poly_curve = (1 + (2*right_poly[0]*700*meters_per_pixel_y + right_poly[1])**2)**(3/2) / abs(2*right_poly[0])
     return left_poly_curve, right_poly_curve
 
 
@@ -136,7 +143,8 @@ def bound_lanes(img, window_centroids, window_height=window_height):
         raise ValueError('image must be 2-d and binary!')
     out_img = np.dstack((img, img, img)) * 255
     window_img = np.zeros_like(out_img)
-    window_centroids = np.array(window_centroids)
+    if not isinstance(window_centroids, np.ndarray):
+        window_centroids = np.array(window_centroids)
     left = window_centroids[:, 0]
     right = window_centroids[:, 1]
     ys = range(720,0,-window_height)
@@ -180,7 +188,7 @@ def bound_lanes(img, window_centroids, window_height=window_height):
     return window_img
 
 
-def transform_lane(centroids, matrix, window_height=window_height):
+def transform_lane(centroids, matrix, window_height=window_height, from_transformed_space=True):
     """
     takes centroids and transforms them into points in the original picture
     see get_perspective_transform under
@@ -188,10 +196,15 @@ def transform_lane(centroids, matrix, window_height=window_height):
     :param centroids:
     :return:
     """
-    centroids = np.array(centroids)
-    left = np.column_stack((centroids[:, 0], range(720, 0, -window_height), np.ones(int(720/window_height))))
+    if not isinstance(centroids, np.ndarray):
+        centroids = np.array(centroids)
+    if from_transformed_space:
+        left = np.column_stack((centroids[:, 0], range(720, 0, -window_height), np.ones(int(720/window_height))))
+        right = np.column_stack((centroids[:, 1], range(720, 0, -window_height), np.ones(int(720/window_height))))
+    else:
+        left = np.column_stack((centroids[:,(0,1)], np.ones(int(720/window_height))))
+        right = np.column_stack((centroids[:,(2,3)], np.ones(int(720/window_height))))
 
-    right = np.column_stack((centroids[:, 1], range(720, 0, -window_height), np.ones(int(720/window_height))))
     left_transformed = matrix.dot(left.T)
     right_transformed = matrix.dot(right.T)
     return left_transformed[:2,:]/left_transformed[2,:], right_transformed[:2,:]/right_transformed[2,:]
@@ -222,13 +235,14 @@ def distance_from_center_lane(left_lane, right_lane, img):
     :param img: original image mainly for coordinates
     :return: distance from center of lanes assuming the lane is 700 pixels at the bottom and a lane is 3.7 meters
     """
-    meters_per_pixel = 3.7 / 700
+    meters_per_pixel_x = 3.7 / 700
+
     left_lane_pixel, right_lane_pixel = extrapolate_to_y_coordinate(700, left_lane, right_lane)
 
     screen_middle_pixel = img.shape[1] / 2
     car_middle_pixel = int((right_lane_pixel + left_lane_pixel) / 2)
     pixels_off_center = screen_middle_pixel - car_middle_pixel
-    meters_off_center = round(meters_per_pixel * pixels_off_center, 2)
+    meters_off_center = round(meters_per_pixel_x * pixels_off_center, 2)
     return meters_off_center
 
 
