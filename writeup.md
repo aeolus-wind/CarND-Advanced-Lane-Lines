@@ -21,10 +21,10 @@ The goals / steps of this project are the following:
 [image1]: ./writeup_images/undistorted_output.png "Undistorted"
 [image2]: ./writeup_images/undistorted_road.jpg "Road Transformed"
 [image3]: ./writeup_images/binary_combo_example.jpg "Binary Example"
-[image4]: ./writeup/hull_and_perspective_transform.png "Warp Example"
-[image5]: ./writeup/warped_binary.png "Warped Binary Image"
-[image6]: ./writeup/bounded_lane.png "Polynomial Fit example"
-[image7]: ./examples/output_example.png "Output"
+[image4]: ./writeup_images/hull_and_perspective_transform.png "Warp Example"
+[image5]: ./writeup_images/warped_binary.png "Warped Binary Image"
+[image6]: ./writeup_images/bounded_lane.png "Polynomial Fit example"
+[image7]: ./writeup_images/output_example.png "Output"
 [video1]: https://youtu.be/fUakW3wDKxA "Video"
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
@@ -107,7 +107,7 @@ The parobolic lanes are mapped back down into the original space in lines 159 an
 
 ####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-Here's a [link to my video result][video1] (The video should be viewable, but note that it is unlisted.)
+Here's a [link to my video result][video1] (The video should be viewable, but note that it is unlisted.) It is also in the github repo. 
 
 ---
 
@@ -119,6 +119,6 @@ The main issue in my implementation is that it is probably more complex than nec
 
 The other flaw in the implementation is that it is very sensitive to noise. I mentioned above the issue from the lane jiggling around a lot and even being unstable due to the fact that the dashed lines disappear every few frames. Similarly, if the lane lines fade into the background too much, the algorithm can pick out a fake lane lane-- e.g. the side of the road. 
 
-The process for dealing with noise is itself quite fragile. The right sequence of images will easily result in an incorrect lane line. An example is found in the final frames of the video where the algorithm does not detect quickly enough that the lanes have become straight again and the ends of the lanes are off. 
+The process for dealing with noise is itself quite fragile. The right sequence of images will easily result in an incorrect lane line. An example is found in the final frames of the video where the algorithm does not detect quickly enough that the lanes have become straight again and the ends of the lanes are off. Whether this constitutes failure is dependent on how the algorithm is used. If it is used to determine the steering angle, then this is a failure. If it is used as an additional feature to another algorithm that looks for areas of interest, then it is useful.
 
 The simplest way to fix the problem is to  just use a smaller region of interest and try to find lines in that area that reach for a vanishing point. Taking into account the radius of curvature in the previous frame, it is then possible to predict were the lines will converge to. This gives several simple and robust guards to change. The algorithm will be stable and much simpler than my implementation. 
