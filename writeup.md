@@ -18,13 +18,14 @@ The goals / steps of this project are the following:
 
 [//]: # (Image References)
 
-[image1]: ./examples/undistort_output.png "Undistorted"
-[image2]: ./test_images/test1.jpg "Road Transformed"
-[image3]: ./examples/binary_combo_example.jpg "Binary Example"
-[image4]: ./examples/warped_straight_lines.jpg "Warp Example"
-[image5]: ./examples/color_fit_lines.jpg "Fit Visual"
-[image6]: ./examples/example_output.jpg "Output"
-[video1]: ./project_video.mp4 "Video"
+[image1]: ./writeup_images/undistorted_output.png "Undistorted"
+[image2]: ./writeup_images/undistorted_road.jpg "Road Transformed"
+[image3]: ./writeup_images/binary_combo_example.jpg "Binary Example"
+[image4]: ./writeup/hull_and_perspective_transform.png "Warp Example"
+[image5]: ./writeup/warped_binary.png "Warped Binary Image"
+[image6]: ./writeup/bounded_lane.png "Polynomial Fit example"
+[image7]: ./examples/output_example.png "Output"
+[video1]: https://youtu.be/fUakW3wDKxA "Video"
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
 ###Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
@@ -34,7 +35,6 @@ The goals / steps of this project are the following:
 
 ####1. Provide a Writeup / README that includes all the rubric points and how you addressed each one.  You can submit your writeup as markdown or pdf.  [Here](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) is a template writeup for this project you can use as a guide and a starting point.  
 
-You're reading it!
 ###Camera Calibration
 
 ####1. Briefly state how you computed the camera matrix and distortion coefficients. Provide an example of a distortion corrected calibration image.
@@ -46,6 +46,7 @@ The code that accomplishes this is on lines 31 and 54. In line 31, the points on
 It is notable, that in this process, something like 3 images failed with the parameters that I called it with. This was due to the fact that some points were cut off in the given chess-board images so that the given parameters didn't work. Despite this, the parameters I chose covered 85% of the pictures and gave a satisfactory result.
 
 
+#### The image belows shows an undistorted chess board. Incidentally, it was one of the 3 that failed to have the right dimensions in the first step of the calibration process. Nonetheless the undistort function works fine.
 ![alt text][image1]
 
 ###Pipeline (single images)
@@ -54,7 +55,7 @@ It is notable, that in this process, something like 3 images failed with the par
 
 Applying the distortion removal to the pictures from the car was interesting. Notably, the areas on the outer edge of the view were shifted a great deal. This turned out to be important for a later step when I forgot to apply distoration removal as I calibrated a step and had to spend half a day redoing the work.
 
-
+#### The image below shows the undistortion applied to a road image. 
 ![alt text][image2]
 ####2. Describe how (and identify where in your code) you used color transforms and gradients. Provide an example of a binary image result.
 
@@ -62,6 +63,7 @@ I applied magnitude and angle orientation primarily to identify dashed white lin
 
 To always identify yellow lines, especially on the white background of the bridge, it was important to use saturation. The function on line 29 of colors.py contains the threshold I used.
 
+#### The image below shows the transform that I ended up applying in the project video. Notably, it deals quite well with yellow lanes. 
 ![alt text][image3]
 
 ####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
@@ -74,15 +76,18 @@ Finally, taking all the detected lines, I did a weighted average which favored l
 
 This procedure caused the transformations to vary widely and the lane lines to move around a lot in the transformed plane. This was because as you passed dashed lines, their length changed rapidly, especially when a dashed line disappeared behind the car. This mean that the transformation changed a lot from frame to frame. Because the lines weren't parallel in the transformed plane at the starting point, the fitting algorithm was then vulnerable to blank spaces and often switched to lines it wasn't supposed to switch to.
 
+#### The picture below is an example of the perspective transform applied to a lane. Note how the line isn't close to being perpendicular to the bottom of the frame. This was a persistent issue with my procedure. The procedure contained a great deal of noise that cuased the transform to jitter a great deal. This could have been partly fixed by playing around with smoothing on the hulls. 
 ![alt text][image4]
 
 ####4. Describe how (and identify where in your code) you identified lane-line pixels and fit their positions with a polynomial?
 
-Line line pixels were identified with the convolution approach. The steps to this algorithm are as follows. First, identify a starting position of the line by bucketing all the activations in the lower forth of the picture. Then you slide a convolutional window across these bucekts to find the point with the largest number of on pixels. Record that point. Using this starting point, you then search 100 pixels in either direction around that point for the point of highest activation. Record that point. Search around this most recently found point in a window of 100 pixels in the same fashion and record. Repeat the last two steps until you reach the top under some pre-defined height step size.
+Lane line pixels were identified with the convolution approach. The steps to this algorithm are as follows. First, identify a starting position of the line by bucketing all the activations in the lower forth of the picture. Then you slide a convolutional window across these bucekts to find the point with the largest number of on pixels. Record that point. Using this starting point, you then search 100 pixels in either direction around that point for the point of highest activation. Record that point. Search around this most recently found point in a window of 100 pixels in the same fashion and record. Repeat the last two steps until you reach the top under some pre-defined height step size.
 
 Taking the points of highest activation from the convolution, I then fit a polynomial. The convolution and the fitting of the polynomial are accomplished on lines 28 and 140 with the functions find_window_centroids and bound_lanes.
 
+#### The images below show first the transformed perspective of some lane lines and then the fitted bounding polynomial on the output to this. Note again how the lanes are not situated close to parallel. Nonetheless, the map down to the original space works well. 
 ![alt text][image5]
+![alt text][image6]
 
 ####5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
@@ -92,9 +97,9 @@ The radius of curvature function probably applies the fact that locally, parabol
 
 ####6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-The parobolic bounding region is mapped back down into the original sapce in lines 159 and 160 of the file test_pipeline.py. 
+The parobolic lanes are mapped back down into the original space in lines 159 and 160 of the file test_pipeline.py. 
 
-![alt text][image6]
+![alt text][image7]
 
 ---
 
@@ -102,7 +107,7 @@ The parobolic bounding region is mapped back down into the original sapce in lin
 
 ####1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-Here's a [link to my video result](./project_video.mp4)
+Here's a [link to my video result][video1] (The video should be viewable, but note that it is unlisted.)
 
 ---
 
@@ -110,4 +115,10 @@ Here's a [link to my video result](./project_video.mp4)
 
 ####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-The main issue in my implementation is that it is probably more complex than necessary. On the bright side, it gives a relatively flexible framework that can be adapted to more extreme situations. My code is clunky and made unnecessarily complicated by several design choices. However, I think I focused on the right facts and ideas and used them appropriately. 
+The main issue in my implementation is that it is probably more complex than necessary. On the bright side, it gives a relatively flexible framework that can be adapted to more extreme situations. The fact that it discovers perspective transformations ont he fly is useful for more difficult situations likea roads with extreme curves.
+
+The other flaw in the implementation is that it is very sensitive to noise. I mentioned above the issue from the lane jiggling around a lot and even being unstable due to the fact that the dashed lines disappear every few frames. Similarly, if the lane lines fade into the background too much, the algorithm can pick out a fake lane lane-- e.g. the side of the road. 
+
+The process for dealing with noise is itself quite fragile. The right sequence of images will easily result in an incorrect lane line. An example is found in the final frames of the video where the algorithm does not detect quickly enough that the lanes have become straight again and the ends of the lanes are off. 
+
+The simplest way to fix the problem is to  just use a smaller region of interest and try to find lines in that area that reach for a vanishing point. Taking into account the radius of curvature in the previous frame, it is then possible to predict were the lines will converge to. This gives several simple and robust guards to change. The algorithm will be stable and much simpler than my implementation. 

@@ -440,7 +440,7 @@ if __name__ == '__main__':
     test_dictionary = False
     test_local_filters = False
     view_extrapolated_lines = False
-    test_hull_on_sample = False
+    test_hull_on_sample = True
     if find_regions_interest:
 
         cv2.namedWindow('img')
@@ -593,8 +593,8 @@ if __name__ == '__main__':
                 f.tight_layout()
                 ax1.imshow(cv2.cvtColor(convergent_line_image, cv2.COLOR_BGR2RGB))
                 ax2.imshow(cv2.cvtColor(transform_coordinates_hull(img, convergent_lines_hull), cv2.COLOR_BGR2RGB))
-                ax1.set_title('unfiltered vanishing point image')
-                ax2.set_title('convergent vanishing point lines')
+                ax1.set_title('Hull Found')
+                ax2.set_title('Perspective Transform Applied to Hull')
                 plt.show()
             else:
                 rmv_distortion = RemoveDistortion()

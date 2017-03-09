@@ -324,11 +324,16 @@ if __name__ == '__main__':
             if first_two_steps:
                 cv2.namedWindow('original binary image')
                 cv2.imshow('original binary image', to_RGB(binary_img))
+
                 cv2.namedWindow('transformed_perspective')
                 cv2.imshow('transformed_perspective', warped)
+                cv2.imwrite('writeup_images/warped_binary.png', to_RGB(warped))
+
                 cv2.namedWindow('bounded_lane')
                 cv2.imshow('bounded_lane', bounded_lane)
+                cv2.imwrite('writeup_images/bounded_lane.png', bounded_lane)
 
             cv2.namedWindow('print lane')
             cv2.imshow('print lane', print_lane)
+            cv2.imwrite('writeup_images/output_example.png', print_lane)
             cv2.waitKey()

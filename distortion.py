@@ -103,7 +103,11 @@ if __name__ == '__main__':
     undistort2 = rmv_distortion.undistort(test2)
     undistort3 = rmv_distortion.undistort(test3)
 
-    cv2.imshow('undistort', undistort)
-    cv2.imshow('undistort2', undistort2)
-    cv2.imshow('undistort3', undistort3)
-    cv2.waitKey()
+    #cv2.imshow('undistort', undistort)
+    #cv2.imshow('undistort2', undistort2)
+    #cv2.imshow('undistort3', undistort3)
+    #cv2.waitKey()
+    cv2.imwrite('undistorted_output.png', cv2.cvtColor(undistort, cv2.COLOR_BGR2RGB))
+    img = rmv_distortion.undistort(cv2.imread('test_images/test1.jpg'))
+    cv2.imwrite('writeup_images/undistorted_road.jpg', img)
+

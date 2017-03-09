@@ -116,8 +116,8 @@ if __name__ == '__main__':
     img = cv2.imread('test_images/test6.jpg')
     hls_img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
 
-    analyze_colors = True
-    test_lane_colors = False
+    analyze_colors = False
+    test_lane_colors = True
     if analyze_colors:
         cv2.namedWindow('image')
         bounding_box = []
@@ -164,6 +164,8 @@ if __name__ == '__main__':
 
         cv2.namedWindow('sobel_mag')
         cv2.imshow('sobel_mag', to_RGB(grad_magnitude(cv2.cvtColor(img,cv2.COLOR_BGR2HLS),ksize=3, thresh=(50,255))))
+
+        cv2.imwrite('writeup_images/binary_combo_example.jpg',to_RGB(or_decision_rule(img)))
 
         cv2.waitKey()
 

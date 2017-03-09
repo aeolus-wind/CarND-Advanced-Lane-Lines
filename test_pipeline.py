@@ -129,8 +129,8 @@ def testing_pipeline(img):
 
 
     latest_poly_coefs = np.concatenate((left_fit, right_fit), axis=0)
-    if np.any(recent_values.poly_change(latest_poly_coefs) > 0.8)\
-             or (recent_values.recent_offset_change(offset, 0.2)):  #if offset changes by more than 10%
+    if np.any(recent_values.poly_change(latest_poly_coefs) > 0.6)\
+             or (recent_values.recent_offset_change(offset, 0.3)):  #if offset changes by more than 10%
         reuse_fit = True
     else:
         recent_values.add_detected(True)
@@ -144,9 +144,10 @@ def testing_pipeline(img):
     if reuse_fit:
         centroids = recent_values.get_recent_centroids()
         invert_matrix = recent_values.get_recent_invert_matrix()
-        recent_values.add_detected(False) #add this after the proper matrices are picked out
         curverad = recent_values.get_recent_radius_curvature()
         offset = recent_values.get_recent_offset()
+        recent_values.add_detected(False)  # add this after the proper matrices are picked out (i.e. this must follow all the 'get functions')
+
 
 
 
@@ -218,7 +219,7 @@ def testing_pipeline(img):
         'diag12': hull_lines_img
     }
 
-    return np.mean(curverad), offset, framed_lane, processing_steps
+    return (curverad[0]+curverad[1])/2, offset, framed_lane, processing_steps
 
 
 
