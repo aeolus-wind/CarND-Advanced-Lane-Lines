@@ -7,16 +7,17 @@ from variable_perspective import get_slopes_intercepts
 from find_lanelines import find_window_centroids, bound_lanes, draw_window_centroids
 from colors import or_decision_rule
 from find_lanelines import window_width, window_height, margin  # some constants to be used by the algorithm
-from find_lanelines import distance_from_center_lane, transform_lane, radius_curvature
+from find_lanelines import distance_from_center_lane, radius_curvature
 from variable_perspective import draw_lines
 from normalize_process_images import to_RGB
-from colors import grad_theta, grad_magnitude
+from colors import hls_decision_rule, grad_magnitude, grad_theta, bit_and_transform
 from variable_perspective import region_of_interest, roi
 import math
-from smooth_value import Smoother
+from Line import Line
 
-problem_image_counter = 0
-recent_values = Smoother(50)  # keeps last 50 values
+left_line = Line(5, tolerance=100)
+right_line = Line(5, tolerance=100)
+counter = 0
 
 def insert_diag_into(frame, diag, x_slice, y_slice):
     # should take in upper left and lower right pixel location
@@ -71,154 +72,107 @@ def run_compose_diag_screen(img):
     result = compose_diag_screen(curverad, offset, framed_lane, **processing_steps)
     return result
 
-
-def testing_pipeline(img):
-    global problem_image_counter
-    global recent_values
+def pipeline(img):
+    global left_line
+    global right_line
+    global counter
     rmv_distortion = RemoveDistortion()
     rmv_distortion.load_pickle()
     undistort = rmv_distortion.undistort(img)
+    # transform into bird-eye perspective
+    #src = np.array([390, 600, 940, 590, 560, 480, 745, 470], np.float32).reshape((4, 2))
+    #dst = np.array([405, 670, 600, 670, 420, 300, 620, 410], np.float32).reshape((4, 2))
+    src = np.array([390, 600, 940, 590, 560, 480, 745, 470], np.float32).reshape((4, 2))
+    dst = np.array([455, 650, 870, 670, 460, 350, 905, 360], np.float32).reshape((4, 2))
 
-    # color and gradient filters
-    hls_colors = cv2.cvtColor(undistort, cv2.COLOR_BGR2HLS)
-    grad_mag = np.uint8(grad_magnitude(undistort, 7, (50, 150)))
-    theta_grad = grad_theta(img, ksize=3, thresh=(math.pi/3-0.2, math.pi/3+0.2))
-    binary_img = or_decision_rule(undistort)
+    M = cv2.getPerspectiveTransform(src, dst)
+    Minv = cv2.getPerspectiveTransform(dst, src)
+    boolean = np.logical_or(bit_and_transform(undistort), hls_decision_rule(undistort))
+    warped = cv2.warpPerspective(to_RGB(boolean), M, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)[: ,:, 0]
 
-    try:
-        hull = filter_lines_find_hull(undistort)
-        hull_slopes, _ = get_slopes_intercepts(np.array(hull).reshape((2,4)))
-        hull_lines_img = np.zeros_like(undistort)
-        draw_lines(hull_lines_img, np.int32(hull).reshape((-1, 1, 4)), thickness=30)
-        hull_lines_img = cv2.addWeighted(hull_lines_img, 1.0, undistort, 1.0, 0.0)
-        recent_values.add_recent_hulls(hull)
-    except ValueError:
-        print("hull was ", hull, "... wrong type")
-        hull_lines_img = np.zeros_like(undistort)
-        cv2.imwrite('problem_image' + str(problem_image_counter) + '.jpg', img)
-        problem_image_counter += 1
-        hull = recent_values.get_last_hull()
-    except:
-        print('not sure what the error is')
-        cv2.imwrite('problem_image'+str(problem_image_counter)+'.jpg',img)
-        problem_image_counter += 1
-        hull = recent_values.get_last_hull()
+    # apply color and gradiant transforms                                                              #this is assuming RGB #  ((warped[:,:,0]>230)& (warped[:,:,1]>200))
+    #bit = np.logical_or(grad_magnitude(warped, ksize=7, thresh=(50, 255)), hls_decision_rule(warped), grad_theta(warped, ksize=3, thresh = (np.pi/3, np.pi/2)))
 
-    # matrices to transform perspective
-    transform_matrix, invert_matrix = get_perspective_transform_matrix(undistort, hull)
+    # remove irrelevant regions
+    warped[-200:, :370] = False  # lower left
+    warped[:550, :300] = False  # top left
+    warped[-300:, -300:] = False  # lower right
+    warped[:450, -300:] = False  # top right
+    warped[-20:, :] = False  # remove bottom 20 pixels
 
-    # transform perspective on filtered binary image
-    warped = cv2.warpPerspective(to_RGB(binary_img), transform_matrix, (binary_img.shape[1], binary_img.shape[0]),
-                                 flags=cv2.INTER_LINEAR)
-
-    centroids = find_window_centroids(warped, window_width, window_height, margin)
+    # find centroids and transform back
 
 
-    # draw convolutional boxes over transformed image
-    convolution = draw_window_centroids(warped[:, :, 0], centroids)
-
-    # curverad and offset
-    left_lane_trans, right_lane_trans = transform_lane(centroids, invert_matrix)
-
-    offset = distance_from_center_lane(left_lane_trans, right_lane_trans, undistort)
-    curverad = radius_curvature(img, centroids)
-
-    # polynomials to be used in smoothing and such
-    left_fit = np.polyfit(left_lane_trans[1], left_lane_trans[0], 2)
-    right_fit = np.polyfit(right_lane_trans[1], right_lane_trans[0], 2)
-
-
-    latest_poly_coefs = np.concatenate((left_fit, right_fit), axis=0)
-    if np.any(recent_values.poly_change(latest_poly_coefs) > 0.6)\
-             or (recent_values.recent_offset_change(offset, 0.3)):  #if offset changes by more than 10%
-        reuse_fit = True
+    if (left_line.current_fit is None and right_line.current_fit is None) or counter > 5:
+        centroids = find_window_centroids(warped, window_width, window_height, margin)
+        counter = 0
     else:
-        recent_values.add_detected(True)
-        reuse_fit = False
-
-    # save latest values
-    current_centroids = centroids #saved regardless for future use if needed
-    current_invert_matrix = invert_matrix
-    current_curverad = curverad
-    current_offset = offset
-    if reuse_fit:
-        centroids = recent_values.get_recent_centroids()
-        invert_matrix = recent_values.get_recent_invert_matrix()
-        curverad = recent_values.get_recent_radius_curvature()
-        offset = recent_values.get_recent_offset()
-        recent_values.add_detected(False)  # add this after the proper matrices are picked out (i.e. this must follow all the 'get functions')
+        try:
+            centroids = Line.local_search(warped, left_line.centroid, right_line.centroid, left_line.extrap.predict_xfitted(), right_line.extrap.predict_xfitted())
+            counter += 1
+        except ValueError:
+            print('exception used')
+            centroids = find_window_centroids(warped, window_width, window_height, margin)
+            counter = 0
 
 
 
 
-    recent_values.add_recent_x_values(left_lane_trans.T, right_lane_trans.T)
-    recent_values.add_recent_offset(current_offset)
-    recent_values.add_recent_radius_curvature(current_curverad[0], current_curverad[1])
-    recent_values.add_recent_poly_coef(left_fit, right_fit)
-    recent_values.add_recent_centroids(current_centroids)
-    recent_values.add_recent_invert_matrix(current_invert_matrix)
+    # add in new values
+    left_centroid = centroids[:, 0]
+    right_centroid = centroids[:, 1]
+
+    # update dependent values
+    offset = distance_from_center_lane(centroids, img, Minv)  # initial attempt
+    left_line.next_fit(left_centroid, right_centroid, offset)
+    right_line.next_fit(right_centroid, left_centroid, offset)
+    # Fit a second order polynomial to each
+
+    bounded = bound_lanes(np.uint8(warped), left_line.get_best_fit(), right_line.get_best_fit())
+
+    bounds_img = cv2.warpPerspective(bounded, Minv, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)
+    bounded_lanes = cv2.addWeighted(np.uint8(img), 1, to_RGB(bounds_img), 0.8, 0)
+
+    # find radius curvature and offset
+    left_curverad, right_curverad = radius_curvature(img, centroids)
+    left_line.set_curverad(left_curverad)
+    right_line.set_curverad(right_curverad)
+    offset = distance_from_center_lane(centroids, img, Minv)
 
 
-    # draw the line in the transformed frame and map the transform back onto the original image
+    #check if detected
 
-    bounded_lane = bound_lanes(warped[:, :, 0], centroids)
-    framed_lane = cv2.addWeighted(undistort, 1,
-                                  cv2.warpPerspective(to_RGB(bounded_lane),
-                                                      invert_matrix,
-                                                      (binary_img.shape[1], binary_img.shape[0]),
-                                                      flags=cv2.INTER_LINEAR),
-                                  0.9, 0)
 
-    """
-    below are lower-level functions
-    """
-    #see all lines before filters
+    #correct if bad
 
-    region_interest = region_of_interest(grad_mag, [roi])
-    lines = cv2.HoughLinesP(region_interest, 1, math.pi / 180, 30, np.array([]),
-                            minLineLength=40, maxLineGap=50)
-    all_hough_lines_img = np.zeros_like(undistort)
-    draw_lines(all_hough_lines_img, lines, thickness=10)
 
-    # test filters of variable perspective
-    best_lines = find_filtered_candidate_lines(undistort)
-    best_lines_accum = []
-    for segment, lines in best_lines.items():
-        best_lines_accum.append(lines)
-    best_lines_accum = np.int32(np.concatenate(best_lines_accum).reshape((-1, 1, 4)))
-    # convergence filter
-    convergent_lines = extrapolate_to_vanishing(best_lines_accum, y_region=(350, 450),
-                                                threshold=10, x_region=(550, 750))
-    # resulting lines to test by projecting outwards
-    projected_lines = collect_filter_projections(img, best_lines_accum, np.array([400]))
-    filtered_projected_lines = collect_filter_projections(undistort, best_lines_accum[convergent_lines],
-                                                          np.array([400]))
-    filter_alone_img = np.zeros_like(undistort)
-    draw_lines(filter_alone_img, np.int32(projected_lines).reshape((-1, 1, 4)), thickness=20)
-    filtered_line_image = cv2.addWeighted(np.uint8(undistort), 1, to_RGB(filter_alone_img), 0.9,0)
-
-    filter_projected_img = np.zeros_like(undistort)
-    draw_lines(filter_projected_img, np.int32(filtered_projected_lines).reshape(-1, 1, 4), thickness=20)
-    convergence_line_image = cv2.addWeighted(np.uint8(undistort), 1, to_RGB(filter_projected_img), 0.9, 0)
+    #add in new values
 
 
 
+    #drawing the convolutional process for diagnostic purposes
+    convolutional_process = draw_window_centroids(np.float32(warped), centroids)
+
+    return bounded_lanes, warped, convolutional_process, (left_curverad, right_curverad), offset
+
+def testing_pipeline(img):
+    framed_lane, bit, convolutional,curverad, offset = pipeline(img)
+    hls_colors = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
 
     processing_steps = {
-        'diag1': undistort,
-        'diag2': binary_img,
-        'diag3': hls_colors[:, :, 0],
-        'diag4': hls_colors[:, :, 2],
-        'diag5': grad_mag,
-        'diag6': theta_grad,
-        'diag7': warped,
-        'diag8': convolution,
-        'diag9': all_hough_lines_img,
-        'diag10': filtered_line_image,
-        'diag11': convergence_line_image,
-        'diag12': hull_lines_img
+        'diag1': bit,
+        'diag2': convolutional,
+        #'diag3': hls_colors[:, :, 0],
+        #'diag4': hls_colors[:, :, 2],
+        #'diag5': img[:,:,0],
+        #'diag6': img[:,:,1],
+        #'diag7': img[:,:,2],
+        #'diag8': convolution,
+        #'diag9': all_hough_lines_img,
+        #'diag10': filtered_line_image,
+        #'diag11': convergence_line_image,
+        #'diag12': hull_lines_img
     }
-
     return (curverad[0]+curverad[1])/2, offset, framed_lane, processing_steps
 
 

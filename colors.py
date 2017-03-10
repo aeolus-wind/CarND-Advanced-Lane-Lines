@@ -106,14 +106,14 @@ def grad_magnitude(img, ksize=3, thresh=(0, 255)):
 
 
 def bit_and_transform(img):
-    theta_grad = grad_theta(img, ksize=3, thresh=(math.pi/3-0.2, math.pi/3+0.2))
+    theta_grad = np.logical_or(grad_theta(img, ksize=3, thresh=(math.pi/3-0.2, math.pi/3+0.2)), grad_theta(img, ksize=3, thresh=(math.pi/4-0.1, math.pi/4+0.1)))
     mag_grad = grad_magnitude(img, ksize=3, thresh=(50, 160))
     return np.logical_and(mag_grad, theta_grad)
 
 
 
 if __name__ == '__main__':
-    img = cv2.imread('test_images/test6.jpg')
+    img = cv2.imread('test_images/test4.jpg')
     hls_img = cv2.cvtColor(img, cv2.COLOR_BGR2HLS)
 
     analyze_colors = False
@@ -160,7 +160,7 @@ if __name__ == '__main__':
         cv2.imshow('combined rule', to_RGB(hls_decision_rule(img)))
 
         cv2.namedWindow('combined and sobel')
-        cv2.imshow('combined and sobel', to_RGB(np.bitwise_or(hls_decision_rule(img), bit_and_transform(img))))
+        cv2.imshow('combined and sobel', to_RGB((img[:,:,2]>230)& (img[:,:,1]>200)))
 
         cv2.namedWindow('sobel_mag')
         cv2.imshow('sobel_mag', to_RGB(grad_magnitude(cv2.cvtColor(img,cv2.COLOR_BGR2HLS),ksize=3, thresh=(50,255))))

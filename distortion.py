@@ -2,6 +2,7 @@ import cv2
 import glob
 import numpy as np
 import pickle
+import os
 
 
 class RemoveDistortion():

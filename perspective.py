@@ -5,8 +5,8 @@ import matplotlib.image as mpimg
 import glob
 from distortion import RemoveDistortion
 import math
-from colors import bit_and_transform
-from watch_video import to_RGB
+from colors import bit_and_transform, grad_magnitude, grad_theta, hls_decision_rule, threshold_saturation
+from normalize_process_images import to_RGB
 
 
 def click_bounding_box(event, x, y, flags, params):
@@ -169,18 +169,19 @@ if '__main__' == __name__:
 
     bounding_boxes = []
 
-    run_find_bounding_boxes = True
-    second_round = True
+    run_find_bounding_boxes = False
+    first_round = False
+    second_round = False
     if run_find_bounding_boxes:
-        find_bounding_boxes(True, False, 6)
-    elif not second_round:
+        find_bounding_boxes(True, False, 4)
+    elif first_round:
         test_image = cv2.imread('test_images/straight_lines1.jpg')
         gray = cv2.cvtColor(test_image, cv2.COLOR_BGR2GRAY)
         undistort = rmv_distortion.undistort(test_image)
         #works for straight road
         #sample_bound_box = np.array([317, 640, 990, 646, 490, 522, 801, 524])
         # curved road
-        sample_bound_box = np.array([370, 623, 981, 625, 519, 506, 772, 493], np.float32)
+        sample_bound_box = np.array([390, 600, 940, 590, 560, 480, 745, 470], np.float32)
 
 
         shape = (1280,720)
@@ -192,7 +193,7 @@ if '__main__' == __name__:
                                          shape)
         plt.imshow(transformed, cmap='gray')
         plt.show()
-    else:
+    elif second_round:
         test_image = mpimg.imread('test_images/test2.jpg')
         gray = cv2.cvtColor(test_image, cv2.COLOR_RGB2GRAY)
         undistort = rmv_distortion.undistort(test_image)
@@ -206,6 +207,29 @@ if '__main__' == __name__:
         ax2.set_title('perspective shift', fontsize=50)
         plt.subplots_adjust(left=0., right=1, top=0.9, bottom=0.)
         plt.show()
+
+    else:
+        img = cv2.imread('test_images/straight_lines1.jpg')
+        src = np.array([390, 600, 940, 590, 560, 480, 745, 470], np.float32).reshape((4, 2))
+        dst = np.array([405, 670, 600, 670, 430, 300, 635, 410], np.float32).reshape((4, 2))
+        M = cv2.getPerspectiveTransform(src, dst)
+
+        warped = cv2.warpPerspective(img, M, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)
+        boolean = to_RGB(np.logical_or(grad_magnitude(warped, ksize=7, thresh=(50, 255)),
+                                       threshold_saturation(warped, (80, 255))))
+
+
+        cv2.namedWindow('test')
+        cv2.imshow('test', warped)
+
+        cv2.imshow('boolean', boolean)
+
+
+        #cv2.namedWindow('filter_windows')
+        #cv2.imshow('filter_windows', to_RGB(grad_magnitude(warped,ksize=11, thresh=(5,100))))
+
+
+        cv2.waitKey()
 
 
 

@@ -7,15 +7,16 @@ from distortion import RemoveDistortion
 from perspective import default_transform_perspective
 from perspective import default_invert_perspective
 from normalize_process_images import to_RGB
-from colors import or_decision_rule
+from colors import grad_magnitude, hls_decision_rule
 from variable_perspective import filter_lines_find_hull, get_perspective_transform_matrix
+import scipy.stats as scis
 
 
 # Read in a thresholded image
 # window settings
-window_width = 50
+window_width = 100
 window_height = 80  # Break image into 9 vertical layers since image height is 720
-margin = 100  # How much to slide left and right for searching
+margin = 50  # How much to slide left and right for searching
 
 
 def window_mask(width, height, img_ref, center, level):
@@ -25,9 +26,9 @@ def window_mask(width, height, img_ref, center, level):
     return output
 
 
-def find_window_centroids(img, window_width, window_height, margin, tolerance=5, initial_point=None):
+def find_window_centroids(img, window_width, window_height, margin):
     window_centroids = []  # Store the (left,right) window centroid positions per level
-    window = np.ones(window_width)  # Create our window template that we will use for convolutions
+    window = scis.norm(0,1).pdf(np.linspace(-2, 2, window_width))  # Create our window template that we will use for convolutions
 
     # First find the two starting positions for the left and right lane by using np.sum to get the vertical image slice
     # and then np.convolve the vertical image slice with the window template
@@ -39,11 +40,6 @@ def find_window_centroids(img, window_width, window_height, margin, tolerance=5,
     l_center = np.argmax(np.convolve(window, l_sum)) - window_width / 2
     r_sum = np.sum(img[int(3 * img.shape[0] / 4):, int(img.shape[1] / 2):], axis=0)
     r_center = np.argmax(np.convolve(window, r_sum)) - window_width / 2 + int(img.shape[1] / 2)
-    if initial_point is not None:
-        if abs((l_center - initial_point[0])/initial_point[0])>0.1:
-            l_center = initial_point[0]
-        if abs((r_center-initial_point[1]) / initial_point[1])>0.1:
-            r_center = initial_point[1]
 
     # Add what we found for the first layer
     window_centroids.append((l_center, r_center))
@@ -67,27 +63,9 @@ def find_window_centroids(img, window_width, window_height, margin, tolerance=5,
         r_center = np.argmax(conv_signal[r_min_index:r_max_index]) + r_min_index - offset
         # Add what we found for that layer
         window_centroids.append((l_center, r_center))
-    #hacky method of determining unusual change amount using something like derivatives
-    window_centroids = np.array(window_centroids)
-    left_first_deriv = window_centroids[:,0][1:] - window_centroids[:,0][:-1]
-    left_second_deriv = left_first_deriv[1:] - left_first_deriv[:-1]
-    right_first_deriv = window_centroids[:,1][1:] - window_centroids[:,1][:-1]
-    right_second_deriv = right_first_deriv[1:] - right_first_deriv[:-1]
 
-    # if there is a large second derivative at any point,
-    # pick the well-behaved changes and tack them on the the poorly behaved
-    if np.mean(np.abs(left_second_deriv)) - np.mean(np.abs(right_second_deriv)) \
-            >= tolerance: #the lines should be parallel
 
-        if np.mean(np.abs(left_second_deriv)) < np.mean(np.abs(right_second_deriv)):
-            additive_derivatives = np.hstack([0, np.cumsum(left_first_deriv)])
-            initial_value = window_centroids[0][1]
-            window_centroids[:, 1] = initial_value + additive_derivatives
-        else:
-            additive_derivatives = np.hstack([0, np.cumsum(right_first_deriv)])
-            initial_value = window_centroids[0][0]
-            window_centroids[:, 0] = initial_value + additive_derivatives
-    return window_centroids
+    return np.array(window_centroids)
 
 
 def draw_window_centroids(img, window_centroids):
@@ -109,13 +87,13 @@ def draw_window_centroids(img, window_centroids):
 
         # Draw the results
         template = np.array(r_points + l_points, np.uint8)  # add both left and right window pixels together
-        zero_channel = np.zeros_like(template)  # create a zero color channle
+        zero_channel = np.zeros_like(template)  # create a zero color channel
         template = np.array(cv2.merge((zero_channel, template, zero_channel)), np.uint8)  # make window pixels green
         warpage = np.array(to_RGB(img),
                            np.uint8)  # making the original road pixels 3 color channels
-        output = cv2.addWeighted(warpage, 1, template, 0.5, 0.0)  # overlay the orignal road image with window results
+        output = cv2.addWeighted(warpage, 1.0, template, 0.5, 0.0)  # overlay the orignal road image with window results
 
-    # If no window centers found, just display orginal road image
+    # If no window centers found, just display original road image
     else:
         output = np.array(cv2.merge((img, img, img)), np.uint8)
 
@@ -126,47 +104,30 @@ def draw_window_centroids(img, window_centroids):
     return output
 
 
-def radius_curvature(img, centroids, window_height=window_height):
-    meters_per_pixel_x = 3.7 / 700
-    meters_per_pixel_y = 30 / 720
-    centroids = np.array(centroids)
-    ys = range(img.shape[0], 0, -window_height)
-    left_poly = np.polyfit(np.array(ys)*meters_per_pixel_y, centroids[:,0]*meters_per_pixel_x, 2)
-    right_poly = np.polyfit(np.array(ys)*meters_per_pixel_y, centroids[:,1]*meters_per_pixel_x, 2)
-    left_poly_curve = (1+(2*left_poly[0]*700*meters_per_pixel_y + left_poly[1])**2)**(3/2) / abs(2*left_poly[0])
-    right_poly_curve = (1 + (2*right_poly[0]*700*meters_per_pixel_y + right_poly[1])**2)**(3/2) / abs(2*right_poly[0])
-    return left_poly_curve, right_poly_curve
 
 
-def bound_lanes(img, window_centroids, window_height=window_height):
+
+def bound_lanes(img, left_fit, right_fit):
     if len(img.shape) != 2:
         raise ValueError('image must be 2-d and binary!')
     out_img = np.dstack((img, img, img)) * 255
     window_img = np.zeros_like(out_img)
-    if not isinstance(window_centroids, np.ndarray):
-        window_centroids = np.array(window_centroids)
-    left = window_centroids[:, 0]
-    right = window_centroids[:, 1]
-    ys = range(720,0,-window_height)
-    # Fit a second order polynomial to each
-    left_fit = np.polyfit(np.array(ys), left, 2)
 
-    right_fit = np.polyfit(np.array(ys), right, 2)
     # Generate x and y values for plotting
     ploty = np.linspace(0, img.shape[0]-1, img.shape[0])
     left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
     right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
 
-    highlight_margin = 30
-    left_line_window1 = np.array([np.transpose(np.vstack([left_fitx-highlight_margin, ploty]))])
-    left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx+highlight_margin, ploty])))])
+    highlight_margin = 20
+    left_line_window1 = np.array([np.transpose(np.vstack([left_fitx-2*highlight_margin, ploty]))])  # frame outer left side
+    left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx-highlight_margin, ploty])))])
     left_line_pts = np.hstack((left_line_window1, left_line_window2))
-    right_line_window1 = np.array([np.transpose(np.vstack([right_fitx-highlight_margin, ploty]))])
-    right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx+highlight_margin, ploty])))])
+    right_line_window1 = np.array([np.transpose(np.vstack([right_fitx+highlight_margin, ploty]))])
+    right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx+2*highlight_margin, ploty])))])  # frame outer right side
     right_line_pts = np.hstack((right_line_window1, right_line_window2))
 
-    lane_highlight_left = np.array([np.transpose(np.vstack([left_fitx,ploty]))])
-    lane_highlight_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx,ploty])))])
+    lane_highlight_left = np.array([np.transpose(np.vstack([left_fitx+highlight_margin,ploty]))])  # within lane
+    lane_highlight_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx-highlight_margin,ploty])))])  # within lane
     lane_highlight_pts = np.hstack((lane_highlight_left, lane_highlight_right))
 
     """
@@ -188,7 +149,20 @@ def bound_lanes(img, window_centroids, window_height=window_height):
     return window_img
 
 
-def transform_lane(centroids, matrix, window_height=window_height, from_transformed_space=True):
+
+def radius_curvature(img, centroids, window_height=window_height):
+    meters_per_pixel_x = 3.7 / 700
+    meters_per_pixel_y = 30 / 720
+    centroids = np.array(centroids)
+    ys = range(img.shape[0], 0, -window_height)
+    left_poly = np.polyfit(np.array(ys)*meters_per_pixel_y, centroids[:,0]*meters_per_pixel_x, 2)
+    right_poly = np.polyfit(np.array(ys)*meters_per_pixel_y, centroids[:,1]*meters_per_pixel_x, 2)
+    left_poly_curve = (1+(2*left_poly[0]*700*meters_per_pixel_y + left_poly[1])**2)**(3/2) / abs(2*left_poly[0])
+    right_poly_curve = (1 + (2*right_poly[0]*700*meters_per_pixel_y + right_poly[1])**2)**(3/2) / abs(2*right_poly[0])
+    return left_poly_curve, right_poly_curve
+
+
+def transform_lane(centroids, matrix, window_height=window_height):
     """
     takes centroids and transforms them into points in the original picture
     see get_perspective_transform under
@@ -198,36 +172,14 @@ def transform_lane(centroids, matrix, window_height=window_height, from_transfor
     """
     if not isinstance(centroids, np.ndarray):
         centroids = np.array(centroids)
-    if from_transformed_space:
-        left = np.column_stack((centroids[:, 0], range(720, 0, -window_height), np.ones(int(720/window_height))))
-        right = np.column_stack((centroids[:, 1], range(720, 0, -window_height), np.ones(int(720/window_height))))
-    else:
-        left = np.column_stack((centroids[:,(0,1)], np.ones(int(720/window_height))))
-        right = np.column_stack((centroids[:,(2,3)], np.ones(int(720/window_height))))
+    left = np.column_stack((centroids[:, 0], range(720, 0, -window_height), np.ones(int(720/window_height))))
+    right = np.column_stack((centroids[:, 1], range(720, 0, -window_height), np.ones(int(720/window_height))))
 
     left_transformed = matrix.dot(left.T)
     right_transformed = matrix.dot(right.T)
-    return left_transformed[:2,:]/left_transformed[2,:], right_transformed[:2,:]/right_transformed[2,:]
+    return (left_transformed[:2,:]/left_transformed[2,:]).T, (right_transformed[:2,:]/right_transformed[2,:]).T
 
-
-def extrapolate_to_y_coordinate(ploty, left_transformed, right_transformed):
-    """
-    fits a polynomial to the 'real coordinates'  and finds the x
-    where the polynomail occurs
-    :param ploty:
-    :param left_transformed:
-    :param right_transformed:
-    :return:
-    """
-    left_fit = np.polyfit(left_transformed[1], left_transformed[0], 2)
-    left_fitx = left_fit[0] * ploty**2 + left_fit[1] * ploty + left_fit[2]
-
-    right_fit = np.polyfit(right_transformed[1], right_transformed[0], 2)
-    right_fitx = right_fit[0]*ploty**2 + right_fit[1] * ploty + right_fit[2]
-    return left_fitx, right_fitx
-
-
-def distance_from_center_lane(left_lane, right_lane, img):
+def distance_from_center_lane(centroids, img, invert_matrix):
     """
     :param left_lane: coordinates of left lane: this lane must be transformed using transform_lane
     otherwise the coordinates will be in the transformed space
@@ -235,12 +187,12 @@ def distance_from_center_lane(left_lane, right_lane, img):
     :param img: original image mainly for coordinates
     :return: distance from center of lanes assuming the lane is 700 pixels at the bottom and a lane is 3.7 meters
     """
+
+    left_lane, right_lane = transform_lane(centroids, invert_matrix)
     meters_per_pixel_x = 3.7 / 700
 
-    left_lane_pixel, right_lane_pixel = extrapolate_to_y_coordinate(700, left_lane, right_lane)
-
     screen_middle_pixel = img.shape[1] / 2
-    car_middle_pixel = int((right_lane_pixel + left_lane_pixel) / 2)
+    car_middle_pixel = int((left_lane[0][0] + right_lane[0][0]) / 2)
     pixels_off_center = screen_middle_pixel - car_middle_pixel
     meters_off_center = round(meters_per_pixel_x * pixels_off_center, 2)
     return meters_off_center
@@ -248,6 +200,7 @@ def distance_from_center_lane(left_lane, right_lane, img):
 
 if __name__ == '__main__':
     original = False
+    radius_curvature_and_basic = False
     if original:
         """
         first procedure I tested-- to be deprecated
@@ -291,7 +244,7 @@ if __name__ == '__main__':
         transform = cv2.addWeighted(undistort, 1, default_invert_perspective(bounded_lane), 0.9, 0)
         cv2.imshow('transformed_image', transform)
         cv2.waitKey()
-    else:
+    elif radius_curvature_and_basic:
         curve_image = glob.glob('test_images/test*.jpg')
         straight_image = glob.glob('test_images/straight_lines*.jpg')
 
@@ -337,3 +290,48 @@ if __name__ == '__main__':
             cv2.imshow('print lane', print_lane)
             cv2.imwrite('writeup_images/output_example.png', print_lane)
             cv2.waitKey()
+            """
+            # some code to play with parallel lines
+            # if there is a large second derivative at any point,
+            # pick the well-behaved changes and tack them on the the poorly behaved
+            if np.mean(np.abs(left_second_deriv)) - np.mean(np.abs(right_second_deriv)) \
+                    >= tolerance:  # the lines should be parallel
+
+                if np.mean(np.abs(left_second_deriv)) < np.mean(np.abs(right_second_deriv)):
+                    additive_derivatives = np.hstack([0, np.cumsum(left_first_deriv)])
+                    initial_value = window_centroids[0][1]
+                    window_centroids[:, 1] = initial_value + additive_derivatives
+                else:
+                    additive_derivatives = np.hstack([0, np.cumsum(right_first_deriv)])
+                    initial_value = window_centroids[0][0]
+                    window_centroids[:, 0] = initial_value + additive_derivatives
+            """
+    else:
+        img = cv2.imread('test_images/straight_lines2.jpg')
+        src = np.array([390, 600, 940, 590, 560, 480, 745, 470], np.float32).reshape((4, 2))
+        dst = np.array([305, 670, 700, 670, 330, 410, 730, 420], np.float32).reshape((4, 2))
+        M = cv2.getPerspectiveTransform(src, dst)
+        warped = cv2.warpPerspective(img, M, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)
+        bit = np.logical_or(grad_magnitude(warped, ksize=7, thresh=(50, 255)), hls_decision_rule(warped))
+
+        bit[-200:, :200] = False
+        bit[-300:, -500:] = False
+        bit[-20:,:] = False
+        centroids = find_window_centroids(bit, window_width, window_height, margin)
+        print(centroids)
+        bounded = bound_lanes(np.uint8(bit), centroids)
+        Minv = cv2.getPerspectiveTransform(dst, src)
+        bounds_img = cv2.warpPerspective(bounded, Minv, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)
+        bounded_lanes = cv2.addWeighted(np.uint8(img), 1, to_RGB(bounds_img), 0.8, 0)
+
+        draw_centroids = draw_window_centroids(np.float32(bit), centroids)
+
+        cv2.namedWindow('bit')
+        cv2.imshow('bit', to_RGB(bit))
+
+        cv2.namedWindow('img')
+        cv2.imshow('img', to_RGB(bounded_lanes))
+
+        cv2.namedWindow('windows')
+        cv2.imshow('windows', draw_centroids)
+        cv2.waitKey()
