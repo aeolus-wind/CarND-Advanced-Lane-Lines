@@ -80,8 +80,6 @@ def pipeline(img):
     rmv_distortion.load_pickle()
     undistort = rmv_distortion.undistort(img)
     # transform into bird-eye perspective
-    #src = np.array([390, 600, 940, 590, 560, 480, 745, 470], np.float32).reshape((4, 2))
-    #dst = np.array([405, 670, 600, 670, 420, 300, 620, 410], np.float32).reshape((4, 2))
     src = np.array([390, 600, 940, 590, 560, 480, 745, 470], np.float32).reshape((4, 2))
     dst = np.array([455, 650, 870, 670, 460, 350, 905, 360], np.float32).reshape((4, 2))
 
@@ -89,9 +87,6 @@ def pipeline(img):
     Minv = cv2.getPerspectiveTransform(dst, src)
     boolean = np.logical_or(bit_and_transform(undistort), hls_decision_rule(undistort))
     warped = cv2.warpPerspective(to_RGB(boolean), M, (img.shape[1], img.shape[0]), flags=cv2.INTER_LINEAR)[: ,:, 0]
-
-    # apply color and gradiant transforms                                                              #this is assuming RGB #  ((warped[:,:,0]>230)& (warped[:,:,1]>200))
-    #bit = np.logical_or(grad_magnitude(warped, ksize=7, thresh=(50, 255)), hls_decision_rule(warped), grad_theta(warped, ksize=3, thresh = (np.pi/3, np.pi/2)))
 
     # remove irrelevant regions
     warped[-200:, :370] = False  # lower left
@@ -101,8 +96,6 @@ def pipeline(img):
     warped[-20:, :] = False  # remove bottom 20 pixels
 
     # find centroids and transform back
-
-
     if (left_line.current_fit is None and right_line.current_fit is None) or counter > 5:
         centroids = find_window_centroids(warped, window_width, window_height, margin)
         counter = 0
@@ -114,8 +107,6 @@ def pipeline(img):
             print('exception used')
             centroids = find_window_centroids(warped, window_width, window_height, margin)
             counter = 0
-
-
 
 
     # add in new values
@@ -138,17 +129,6 @@ def pipeline(img):
     left_line.set_curverad(left_curverad)
     right_line.set_curverad(right_curverad)
     offset = distance_from_center_lane(centroids, img, Minv)
-
-
-    #check if detected
-
-
-    #correct if bad
-
-
-    #add in new values
-
-
 
     #drawing the convolutional process for diagnostic purposes
     convolutional_process = draw_window_centroids(np.float32(warped), centroids)

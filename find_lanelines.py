@@ -119,27 +119,16 @@ def bound_lanes(img, left_fit, right_fit):
     right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
 
     highlight_margin = 20
-    left_line_window1 = np.array([np.transpose(np.vstack([left_fitx-2*highlight_margin, ploty]))])  # frame outer left side
-    left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx-highlight_margin, ploty])))])
+    left_line_window1 = np.array([np.transpose(np.vstack([left_fitx-highlight_margin, ploty]))])  # frame outer left side
+    left_line_window2 = np.array([np.flipud(np.transpose(np.vstack([left_fitx, ploty])))])
     left_line_pts = np.hstack((left_line_window1, left_line_window2))
-    right_line_window1 = np.array([np.transpose(np.vstack([right_fitx+highlight_margin, ploty]))])
-    right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx+2*highlight_margin, ploty])))])  # frame outer right side
+    right_line_window1 = np.array([np.transpose(np.vstack([right_fitx, ploty]))])
+    right_line_window2 = np.array([np.flipud(np.transpose(np.vstack([right_fitx+highlight_margin, ploty])))])  # frame outer right side
     right_line_pts = np.hstack((right_line_window1, right_line_window2))
 
     lane_highlight_left = np.array([np.transpose(np.vstack([left_fitx+highlight_margin,ploty]))])  # within lane
     lane_highlight_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx-highlight_margin,ploty])))])  # within lane
     lane_highlight_pts = np.hstack((lane_highlight_left, lane_highlight_right))
-
-    """
-    f, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 9))
-    f.tight_layout()
-    ax1.imshow(img, cmap='gray')
-    ax1.set_title('original', fontsize=50)
-    ax2.plot(left_line_pts[:,:,0],  left_line_pts[:,:,1], '.')
-    ax2.set_title('contour', fontsize=50)
-    plt.subplots_adjust(left=0., right=1, top=0.9, bottom=0.)
-    plt.show()
-    """
 
     # Draw the lane onto the warped blank image
     cv2.fillPoly(window_img, np.int_(left_line_pts), (0,255,0))
@@ -290,22 +279,7 @@ if __name__ == '__main__':
             cv2.imshow('print lane', print_lane)
             cv2.imwrite('writeup_images/output_example.png', print_lane)
             cv2.waitKey()
-            """
-            # some code to play with parallel lines
-            # if there is a large second derivative at any point,
-            # pick the well-behaved changes and tack them on the the poorly behaved
-            if np.mean(np.abs(left_second_deriv)) - np.mean(np.abs(right_second_deriv)) \
-                    >= tolerance:  # the lines should be parallel
 
-                if np.mean(np.abs(left_second_deriv)) < np.mean(np.abs(right_second_deriv)):
-                    additive_derivatives = np.hstack([0, np.cumsum(left_first_deriv)])
-                    initial_value = window_centroids[0][1]
-                    window_centroids[:, 1] = initial_value + additive_derivatives
-                else:
-                    additive_derivatives = np.hstack([0, np.cumsum(right_first_deriv)])
-                    initial_value = window_centroids[0][0]
-                    window_centroids[:, 0] = initial_value + additive_derivatives
-            """
     else:
         img = cv2.imread('test_images/straight_lines2.jpg')
         src = np.array([390, 600, 940, 590, 560, 480, 745, 470], np.float32).reshape((4, 2))
