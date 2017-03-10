@@ -74,7 +74,7 @@ class Line():
     def new_fit_valid(self, new_fit, other_new_fit, offset):
         new_xs = self.calculate_xs(new_fit)
         other_new_xs = self.calculate_xs(other_new_fit)
-        polynomial_similar = np.abs((new_fit - self.get_best_fit())/self.get_best_fit()) < 0.5  # all polynomial coefficients changed less than 20%
+        polynomial_similar = np.abs((new_fit - self.get_best_fit())/self.get_best_fit()) < 0.3  # all polynomial coefficients changed less than 20%
         if np.any(polynomial_similar == np.inf):
             polynomial_similar = True
         else:

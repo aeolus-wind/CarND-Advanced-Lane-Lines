@@ -1,18 +1,12 @@
 import cv2
 import numpy as np
 from distortion import RemoveDistortion
-from variable_perspective import filter_lines_find_hull, get_perspective_transform_matrix
-from variable_perspective import extrapolate_to_vanishing, collect_filter_projections, find_filtered_candidate_lines
-from variable_perspective import get_slopes_intercepts
 from find_lanelines import find_window_centroids, bound_lanes, draw_window_centroids
-from colors import or_decision_rule
 from find_lanelines import window_width, window_height, margin  # some constants to be used by the algorithm
 from find_lanelines import distance_from_center_lane, radius_curvature
-from variable_perspective import draw_lines
 from normalize_process_images import to_RGB
-from colors import hls_decision_rule, grad_magnitude, grad_theta, bit_and_transform
-from variable_perspective import region_of_interest, roi
-import math
+from colors import hls_decision_rule, bit_and_transform
+
 from Line import Line
 
 left_line = Line(5, tolerance=100)

@@ -96,15 +96,7 @@ def draw_window_centroids(img, window_centroids):
     # If no window centers found, just display original road image
     else:
         output = np.array(cv2.merge((img, img, img)), np.uint8)
-
-    # Display the final results
-    #plt.imshow(output)
-    #plt.title('window fitting results')
-    #plt.show()
     return output
-
-
-
 
 
 def bound_lanes(img, left_fit, right_fit):
@@ -140,6 +132,10 @@ def bound_lanes(img, left_fit, right_fit):
 
 
 def radius_curvature(img, centroids, window_height=window_height):
+    """
+    Taking centroids in the transformed space, a polynomial is fit and the function for radius curvature is applied,
+    using meters_per_pixels conversions from the lessons
+    """
     meters_per_pixel_x = 3.7 / 700
     meters_per_pixel_y = 30 / 720
     centroids = np.array(centroids)

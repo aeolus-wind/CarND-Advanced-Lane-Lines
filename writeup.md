@@ -53,7 +53,7 @@ It is notable, that in this process, something like 3 images failed with the par
 
 ####1. Provide an example of a distortion-corrected image.
 
-Applying the distortion removal to the pictures from the car was interesting. Notably, the areas on the outer edge of the view were shifted a great deal. This turned out to be important for a later step when I forgot to apply distoration removal as I calibrated a step and had to spend half a day redoing the work.
+Applying the distortion removal to the pictures from the car was interesting. Notably, the areas on the outer edge of the view were shifted a great deal. 
 
 #### The image below shows the undistortion applied to a road image. 
 ![alt text][image2]
@@ -68,13 +68,18 @@ To always identify yellow lines, especially on the white background of the bridg
 
 ####3. Describe how (and identify where in your code) you performed a perspective transform and provide an example of a transformed image.
 
-When I started the project, I suspected that given the videos and the fact that the road curves gently, I could use a constant region to describe the perspective transform. However, during my experimentation, it appeared that the approximation didn't always hold up. In retrospect, I might say that this was the incorrect conclusion and I could have made it work. In any case, this conclusion led me to create an elaborate framework for detecting parallel lines and calculating their perspective transforms on the fly. The idea is as follows: because we are on a road, there will be many lines. But how does one pick out the relevant lines? The lines that we care about will be long and start in certain parts of the picture. They will have a restricted possible set of angles and will converge towards some vanishing point. With this in mind, I constructed two filters. One takes the lines from a Hough transform and picks out those lines with a certain slope and a certain starting point. This filter is defined on lines 78-170 in the file variable_perspective.py.
+The perspective transform was applied on lines 77-83. I assumed a constant region would be consistently rectangular in the birds'-eye view . 
 
-The second filter used the accumulator idea described in the hough transform. I specified a region which probably contained the vanishing point. Then I counted the lines as they travled through this region. Those cells with a high number of lines indicated lines which reached for a vanishing point. The function which accomplishes this is in line 227 of the file variable_perspective.py.
 
-Finally, taking all the detected lines, I did a weighted average which favored long lines and lines close to the lower left and middle right (I used (150, 720) and (820, 720)). This function is on line 311 in variable_perspective.py.
+| Source        | Destination   | 
+|:-------------:|:-------------:| 
+| 390, 600      | 455, 650      | 
+| 940, 590      | 870, 670      |
+| 560, 480      | 460, 350      |
+| 745, 470      | 905, 360      |
 
-This procedure caused the transformations to vary widely and the lane lines to move around a lot in the transformed plane. This was because as you passed dashed lines, their length changed rapidly, especially when a dashed line disappeared behind the car. This mean that the transformation changed a lot from frame to frame. Because the lines weren't parallel in the transformed plane at the starting point, the fitting algorithm was then vulnerable to blank spaces and often switched to lines it wasn't supposed to switch to.
+I did a fair bit of experimentation over how narrow I should make the destination region. Everything under 300 pixels caused extreme distortion in the drawn lane lines
+
 
 #### The picture below is an example of the perspective transform applied to a lane. Note how the line isn't close to being perpendicular to the bottom of the frame. This was a persistent issue with my procedure. The procedure contained a great deal of noise that cuased the transform to jitter a great deal. This could have been partly fixed by playing around with smoothing on the hulls. 
 ![alt text][image4]
@@ -83,7 +88,7 @@ This procedure caused the transformations to vary widely and the lane lines to m
 
 Lane line pixels were identified with the convolution approach. The steps to this algorithm are as follows. First, identify a starting position of the line by bucketing all the activations in the lower forth of the picture. Then you slide a convolutional window across these bucekts to find the point with the largest number of on pixels. Record that point. Using this starting point, you then search 100 pixels in either direction around that point for the point of highest activation. Record that point. Search around this most recently found point in a window of 100 pixels in the same fashion and record. Repeat the last two steps until you reach the top under some pre-defined height step size.
 
-Taking the points of highest activation from the convolution, I then fit a polynomial. The convolution and the fitting of the polynomial are accomplished on lines 28 and 140 with the functions find_window_centroids and bound_lanes.
+Taking the points of highest activation from the convolution, I then fit a polynomial. The convolution and the fitting of the polynomial are accomplished on lines 29 and 102 with the functions find_window_centroids and bound_lanes.
 
 #### The images below show first the transformed perspective of some lane lines and then the fitted bounding polynomial on the output to this. Note again how the lanes are not situated close to parallel. Nonetheless, the map down to the original space works well. 
 ![alt text][image5]
@@ -91,13 +96,13 @@ Taking the points of highest activation from the convolution, I then fit a polyn
 
 ####5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
 
-The radius of curvature is found on lines 129 with the function radius_curvature in the file find_lanelines.py and the position of the vehicle with respect to center is found  on line 230 with the function distance_from_center_lane. 
+The radius of curvature is found on lines 129 with the function radius_curvature in the file find_lanelines.py and the position of the vehicle with respect to center is found  on line 167 with the function distance_from_center_lane. 
 
 The radius of curvature function probably applies the fact that locally, parabolas are like circles. Thus, you can approximate the distance to the center of a circle given the constants in a parabola by taking a variable circle and picking the radius which minimizes the error between the circle and the parobolic region it touches. 
 
 ####6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
 
-The parobolic lanes are mapped back down into the original space in lines 159 and 160 of the file test_pipeline.py. 
+The parobolic lanes are mapped back down into the original space in lines 118 of the file test_pipeline.py. 
 
 ![alt text][image7]
 
@@ -115,10 +120,6 @@ Here's a [link to my video result][video1] (The video should be viewable, but no
 
 ####1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-The main issue in my implementation is that it is probably more complex than necessary. On the bright side, it gives a relatively flexible framework that can be adapted to more extreme situations. The fact that it discovers perspective transformations ont he fly is useful for more difficult situations likea roads with extreme curves.
+There are points in the video where my filtering is not perfect or is a little slow. This is probably because the restrictions on accepting a new image are a bit too stringent or it applies the simple physics-based smoothing too liberally. 
 
-The other flaw in the implementation is that it is very sensitive to noise. I mentioned above the issue from the lane jiggling around a lot and even being unstable due to the fact that the dashed lines disappear every few frames. Similarly, if the lane lines fade into the background too much, the algorithm can pick out a fake lane lane-- e.g. the side of the road. 
-
-The process for dealing with noise is itself quite fragile. The right sequence of images will easily result in an incorrect lane line. An example is found in the final frames of the video where the algorithm does not detect quickly enough that the lanes have become straight again and the ends of the lanes are off. Whether this constitutes failure is dependent on how the algorithm is used. If it is used to determine the steering angle, then this is a failure. If it is used as an additional feature to another algorithm that looks for areas of interest, then it is useful.
-
-The simplest way to fix the problem is to  just use a smaller region of interest and try to find lines in that area that reach for a vanishing point. Taking into account the radius of curvature in the previous frame, it is then possible to predict were the lines will converge to. This gives several simple and robust guards to change. The algorithm will be stable and much simpler than my implementation. 
+If there are multiple frames in a row with changes in lighting, the process will also fail as the filters do not remove shadow. 
