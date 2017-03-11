@@ -25,7 +25,7 @@ The goals / steps of this project are the following:
 [image5]: ./writeup_images/warped_binary.png "Warped Binary Image"
 [image6]: ./writeup_images/bounded_lane.png "Polynomial Fit example"
 [image7]: ./writeup_images/output_example.png "Output"
-[video1]: https://youtu.be/fUakW3wDKxA "Video"
+[video1]: https://youtu.be/T8L1MZQaH1Q "Video"
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
 ###Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
